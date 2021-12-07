@@ -6,8 +6,24 @@
 #include "AsyncUDP.h"
 #include <TimeLib.h>
 #include <ArduinoJson.h>
-const char * ssid = "TP-LINK_6CAE";
-const char * password = "41422915";
+#include <ArduinoMqttClient.h>
+//#include <WiFi.h> // Añade esta línea
+//char pass[] = "Reemplaza_por_contraseña";
+WiFiClient wifiClient;
+MqttClient mqttClient(wifiClient);
+const char broker[] = "broker.hivemq.com";
+int port = 1883;
+const char topic_temp[] = "myfridge/sensor/temperatura";
+const char topic_magn[] = "myfridge/sensor/magnetico";
+const long interval = 1000;
+unsigned long previousMillis = 0;
+int count = 0;
+
+
+//const char * ssid = "TP-LINK_6CAE";
+//const char * password = "41422915";
+const char * ssid = "vodafoneBA2375";
+const char * password = "C7T453DHKNY46RNY";
 AsyncUDP udp;
 StaticJsonDocument<200> jsonBuffer; //tamaño maximo de los datos
 
@@ -24,6 +40,7 @@ const int pinMagnetic = 2;
 const int pinLEDMagnetic = 5;
 
 int preview = LOW;
+int preview2 = LOW;
 
 void setup() {
 
@@ -62,6 +79,23 @@ void setup() {
     });
   }
 
+  // attempt to connect to Wifi network:
+  //You can provide a unique ID, if not set the library uses Arduino-millis()
+  //Each client must have a unique client ID
+  mqttClient.setId("123479567"); // Obligatorio cambiarlo
+  // You can provide a username and password for authentication
+  // mqttClient.setUsernamePassword("username", "password");
+  Serial.print("Attempting to connect to the MQTT broker: ");
+  Serial.println(broker);
+  if (!mqttClient.connect(broker, port)) {
+    Serial.print("MQTT connection failed! Error code = ");
+    Serial.println(mqttClient.connectError());
+    while (1);
+  }
+  Serial.println("You're connected to the MQTT broker!");
+  Serial.println();
+
+
 }
 
 void loop() {
@@ -69,25 +103,22 @@ void loop() {
 
 
   delay(2000);
-  //digitalWrº
-  ite(pinLEDTemperature, HIGH);
+  //digitalWrite(pinLEDTemperature, HIGH);
   // Leemos la humedad relativa
   float h = dht.readHumidity();
   // Leemos la temperatura en grados centígrados (por defecto)
   float t = dht.readTemperature();
+  Serial.println(t);
   // Leemos la temperatura en grados Fahreheit
   float f = dht.readTemperature(true);
 
+ 
 
-  /*if (isnan(h) || isnan(t) || isnan(f)) {
+  if (t > 23) {
     digitalWrite(pinLEDTemperature, HIGH);
-    //Serial.println("Error obteniendo los datos del sensor DHT11");
-    return;
-    }*/
-
-  if (t > 30) {
-    digitalWrite(pinLEDTemperature, HIGH);
+    //delay(500);
     M5.Speaker.tone(900, 1000);
+   
     //Serial.println("Error obteniendo los datos del sensor DHT11");
     //return;
   } else {
@@ -101,19 +132,6 @@ void loop() {
   // Calcular el índice de calor en grados centígrados
   float hic = dht.computeHeatIndex(t, h, false);
 
-  /*Serial.print("Humedad: ");
-    Serial.print(h);
-    Serial.print(" %\t");
-    Serial.print("Temperatura: ");
-    Serial.print(t);
-    Serial.print(" *C ");
-    Serial.print(f);
-    Serial.print(" *F\t");
-    Serial.print("Índice de calor: ");
-    Serial.print(hic);
-    Serial.print(" *C ");
-    Serial.print(hif);
-    Serial.println(" *F");*/
   M5.Lcd.setCursor(0, 0);
   M5.Lcd.println(t);
   jsonBuffer["Temperatura"] = t;
@@ -144,5 +162,37 @@ void loop() {
   serializeJson(jsonBuffer, texto); //paso del objeto “jsonbuffer" a texto para
   //transmitirlo
   udp.broadcastTo(texto, 1234); //se envía por el puerto 1234 el JSON
+
+//-----------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------
+//CODIGO DEL PROTOCOLO MQTT
+  //call poll() regularly to allow the library to receive MQTT messages and
+  //send MQTT keep alives which avoids being disconnected by the broker
+  mqttClient.poll();
+  //avoid having delays in loop, we'll use the strategy from BlinkWithoutDelay
+  //see: File -> Examples -> 02.Digital -> BlinkWithoutDelay for more info
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    // save the last time a message was sent
+    previousMillis = currentMillis;
+    /*Serial.print("Sending message to topic: ");
+    Serial.println(topic);
+    Serial.print("echo ");
+    Serial.println("Bye");*/
+    
+    //send message, the Print interface can be used to set the message content
+    mqttClient.beginMessage(topic_temp);
+    mqttClient.print(t);
+    mqttClient.endMessage();
+    Serial.println();
+
+    mqttClient.beginMessage(topic_magn);
+    
+    mqttClient.print(value);
+    mqttClient.endMessage();
+    Serial.println();
+    count++;
+  }
+
   delay(2000);
 }
